@@ -1,0 +1,120 @@
+@import "tailwindcss";
+
+@theme {
+  --color-cabu-black: #0F172A;
+  --color-cabu-charcoal: #1E293B;
+  --color-cabu-green: #4F46E5;
+  --color-cabu-green-dark: #4338CA;
+  --color-cabu-orange: #6366F1;
+  --color-cabu-orange-dark: #4F46E5;
+  --color-cabu-white: #FFFFFF;
+  --color-cabu-light: #F8FAFC;
+  --color-cabu-border: #E2E8F0;
+  --color-cabu-muted: #64748B;
+}
+
+:root {
+  --cabu-black: #0F172A;
+  --cabu-charcoal: #1E293B;
+  --cabu-green: #4F46E5;
+  --cabu-green-dark: #4338CA;
+  --cabu-orange: #6366F1;
+  --cabu-orange-dark: #4F46E5;
+  --cabu-white: #FFFFFF;
+  --cabu-light: #F8FAFC;
+  --cabu-border: #E2E8F0;
+  --cabu-muted: #64748B;
+}
+
+body {
+  background-color: #F8FAFC;
+  color: #0F172A;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom Sleek Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #F1F5F9;
+}
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+
+/* Print Media Styles for Clean Official Receipts */
+@media print {
+  @page {
+    size: auto;
+    margin: 10mm 12mm;
+  }
+
+  /* Reset body and html backgrounds */
+  html, body {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+    min-height: 100% !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Hide all elements on page by default */
+  body * {
+    visibility: hidden;
+  }
+
+  /* Make printable receipt card and all its children visible */
+  #printable-receipt-card,
+  #printable-receipt-card * {
+    visibility: visible;
+  }
+
+  /* Position receipt at top of print page */
+  #printable-receipt-card {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    border-radius: 0 !important;
+  }
+
+  /* Explicitly hide non-printable receipt buttons / close elements */
+  .print\:hidden,
+  .print-hidden,
+  #printable-receipt-card .print\:hidden,
+  #printable-receipt-card .print-hidden {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  /* Ensure tables and key sections do not split awkwardly */
+  table, tr, td, th, tbody, thead, tfoot {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .print-avoid-break {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+}
+
+

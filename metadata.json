@@ -1,0 +1,6 @@
+{
+  "name": "CABU EventHub",
+  "description": "Event registration, accommodation booking, DPO sandbox payment, guest dashboard, admin dashboard, attendee history, Results & Certificates, and reporting system for Central Africa Baptist University events.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
