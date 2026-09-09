@@ -8,6 +8,8 @@ import {
   AccommodationBooking,
   MealTicket,
   ResultCertificate,
+  EventResult,
+  ResultAuditLog,
   DpoTransactionLog,
   CheckIn,
 } from "../types";
@@ -15,7 +17,7 @@ import { normalizeNrc } from "./nrc";
 import { normalizePhone } from "./phone";
 
 const VERSION_KEY = "cabu_eventhub_data_version";
-const CURRENT_VERSION = "1.3.0";
+const CURRENT_VERSION = "1.4.0";
 
 const KEYS = {
   EVENTS: "cabu_eventhub_events",
@@ -27,6 +29,8 @@ const KEYS = {
   BOOKINGS: "cabu_eventhub_bookings",
   MEAL_TICKETS: "cabu_eventhub_meal_tickets",
   RESULTS_CERTIFICATES: "cabu_eventhub_results_certificates",
+  EVENT_RESULTS: "cabu_eventhub_event_results",
+  RESULTS_AUDIT_LOGS: "cabu_eventhub_results_audit_logs",
   DPO_LOGS: "cabu_eventhub_dpo_logs",
   CHECKINS: "cabu_eventhub_checkins",
   CURRENT_ATTENDEE_ID: "cabu_eventhub_current_attendee_id",
@@ -188,6 +192,25 @@ const SEED_ATTENDEES: Attendee[] = [
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
+  {
+    id: "att-demo-3",
+    firstName: "Patson",
+    lastName: "Kalamatila",
+    fullName: "Patson Kalamatila",
+    nrcNumber: "987654/33/1",
+    normalizedNrcNumber: "987654331",
+    email: "patson.kalamatila@example.com",
+    phone: "+260971234567",
+    normalizedPhone: "+260971234567",
+    gender: "Male",
+    churchOrganization: "Faith Baptist Church, Kitwe",
+    city: "Kitwe",
+    country: "Zambia",
+    phoneVerified: true,
+    phoneVerifiedAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
 ];
 
 const SEED_REGISTRATIONS: Registration[] = [
@@ -227,6 +250,26 @@ const SEED_REGISTRATIONS: Registration[] = [
     registrationStatus: "confirmed",
     paymentStatus: "verified",
     dpoTransactionReference: "CABU-EVENT-EQUIP-2026-0002-DEMO2",
+    consentUpdates: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "reg-demo-3",
+    eventId: "event-block-class-2026",
+    attendeeId: "att-demo-3",
+    trackId: "track-block-4",
+    registrationReference: "BLOCK-2026-0001",
+    baseRegistrationFee: 1.00,
+    accommodationRequested: false,
+    accommodationFee: 0,
+    mealTicketRequested: true,
+    mealTicketFee: 0,
+    totalAmountDue: 1.00,
+    isReturningAttendee: false,
+    registrationStatus: "confirmed",
+    paymentStatus: "verified",
+    dpoTransactionReference: "CABU-EVENT-BLOCK-2026-0001-DEMO3",
     consentUpdates: true,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -338,6 +381,65 @@ const SEED_RESULTS_CERTIFICATES: ResultCertificate[] = [
   },
 ];
 
+const SEED_EVENT_RESULTS: EventResult[] = [
+  {
+    id: "res-demo-1",
+    attendeeId: "att-demo-3",
+    registrationId: "reg-demo-3",
+    eventId: "event-block-class-2026",
+    trackId: "track-block-4",
+    score: 82,
+    maxScore: 100,
+    percentage: 82,
+    grade: "A",
+    status: "PASS",
+    remarks: "Successfully completed the course.",
+    published: true,
+    publishedAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    createdBy: "itmanger@cabuniversity.com",
+    updatedBy: "itmanger@cabuniversity.com",
+  },
+  {
+    id: "res-demo-2",
+    attendeeId: "att-demo-1",
+    registrationId: "reg-demo-1",
+    eventId: "event-equip-2026",
+    trackId: "track-eq-1",
+    score: 92,
+    maxScore: 100,
+    percentage: 92,
+    grade: "Distinction",
+    status: "PASS",
+    remarks: "Expository Preaching Module 1 passed with distinction.",
+    published: true,
+    publishedAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    createdBy: "itmanger@cabuniversity.com",
+    updatedBy: "itmanger@cabuniversity.com",
+  },
+  {
+    id: "res-demo-3",
+    attendeeId: "att-demo-2",
+    registrationId: "reg-demo-2",
+    eventId: "event-equip-2026",
+    trackId: "track-eq-3",
+    score: 74,
+    maxScore: 100,
+    percentage: 74,
+    grade: "B+",
+    status: "PASS",
+    remarks: "Final evaluation pending faculty sign-off.",
+    published: false,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    createdBy: "itmanger@cabuniversity.com",
+    updatedBy: "itmanger@cabuniversity.com",
+  },
+];
+
 // Helper to check and initialize storage
 export function initializeStorage() {
   if (typeof window === "undefined") return;
@@ -358,6 +460,10 @@ export function seedDemoData() {
   localStorage.setItem(KEYS.BOOKINGS, JSON.stringify(SEED_BOOKINGS));
   localStorage.setItem(KEYS.MEAL_TICKETS, JSON.stringify(SEED_MEAL_TICKETS));
   localStorage.setItem(KEYS.RESULTS_CERTIFICATES, JSON.stringify(SEED_RESULTS_CERTIFICATES));
+  localStorage.setItem(KEYS.EVENT_RESULTS, JSON.stringify(SEED_EVENT_RESULTS));
+  if (!localStorage.getItem(KEYS.RESULTS_AUDIT_LOGS)) {
+    localStorage.setItem(KEYS.RESULTS_AUDIT_LOGS, JSON.stringify([]));
+  }
   if (!localStorage.getItem(KEYS.DPO_LOGS)) {
     localStorage.setItem(KEYS.DPO_LOGS, JSON.stringify([]));
   }
@@ -656,7 +762,7 @@ export function saveMealTickets(tickets: MealTicket[]): void {
   localStorage.setItem(KEYS.MEAL_TICKETS, JSON.stringify(tickets));
 }
 
-// Results & Certificates
+// Results & Certificates (Legacy / Module Certificates)
 export function getResultsCertificates(): ResultCertificate[] {
   initializeStorage();
   const data = localStorage.getItem(KEYS.RESULTS_CERTIFICATES);
@@ -665,6 +771,172 @@ export function getResultsCertificates(): ResultCertificate[] {
 
 export function saveResultsCertificates(records: ResultCertificate[]): void {
   localStorage.setItem(KEYS.RESULTS_CERTIFICATES, JSON.stringify(records));
+}
+
+// Event Results Management (Academic Evaluations & Scores)
+export function getEventResults(): EventResult[] {
+  initializeStorage();
+  const data = localStorage.getItem(KEYS.EVENT_RESULTS);
+  let results: EventResult[] = data ? JSON.parse(data) : [];
+  if (results.length === 0 && SEED_EVENT_RESULTS.length > 0) {
+    results = [...SEED_EVENT_RESULTS];
+    localStorage.setItem(KEYS.EVENT_RESULTS, JSON.stringify(results));
+  }
+  return results;
+}
+
+export function saveEventResults(records: EventResult[]): void {
+  localStorage.setItem(KEYS.EVENT_RESULTS, JSON.stringify(records));
+}
+
+export function getEventResultsByAttendee(attendeeId: string, onlyPublished: boolean = true): EventResult[] {
+  if (!attendeeId) return [];
+  const results = getEventResults();
+  return results.filter((r) => r.attendeeId === attendeeId && (!onlyPublished || r.published === true));
+}
+
+export function saveOrUpdateEventResult(
+  result: EventResult,
+  adminEmail: string = "itmanger@cabuniversity.com"
+): EventResult {
+  const allResults = getEventResults();
+  const nowIso = new Date().toISOString();
+  const existingIndex = allResults.findIndex((r) => r.id === result.id);
+
+  let savedResult: EventResult;
+  let action: "RESULT_CREATED" | "RESULT_UPDATED" = "RESULT_CREATED";
+
+  if (existingIndex !== -1) {
+    action = "RESULT_UPDATED";
+    savedResult = {
+      ...allResults[existingIndex],
+      ...result,
+      updatedAt: nowIso,
+      updatedBy: adminEmail,
+      publishedAt: result.published
+        ? allResults[existingIndex].publishedAt || nowIso
+        : undefined,
+    };
+    allResults[existingIndex] = savedResult;
+  } else {
+    action = "RESULT_CREATED";
+    savedResult = {
+      ...result,
+      id: result.id || `res-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      createdAt: result.createdAt || nowIso,
+      updatedAt: nowIso,
+      createdBy: result.createdBy || adminEmail,
+      updatedBy: adminEmail,
+      publishedAt: result.published ? (result.publishedAt || nowIso) : undefined,
+    };
+    allResults.unshift(savedResult);
+  }
+
+  saveEventResults(allResults);
+
+  // Log Audit
+  const attendees = getAttendees();
+  const events = getEvents();
+  const att = attendees.find((a) => a.id === savedResult.attendeeId);
+  const ev = events.find((e) => e.id === savedResult.eventId);
+
+  logResultAudit({
+    action,
+    adminEmail,
+    resultId: savedResult.id,
+    attendeeId: savedResult.attendeeId,
+    attendeeName: att?.fullName,
+    eventId: savedResult.eventId,
+    eventCode: ev?.code || ev?.slug,
+    details: `${action === "RESULT_CREATED" ? "Created" : "Updated"} result for ${att?.fullName || savedResult.attendeeId} (${savedResult.status}${savedResult.score !== undefined ? ` - Score: ${savedResult.score}` : ""}, Published: ${savedResult.published ? "Yes" : "No"})`,
+  });
+
+  return savedResult;
+}
+
+export function togglePublishEventResult(
+  resultId: string,
+  publish: boolean,
+  adminEmail: string = "itmanger@cabuniversity.com"
+): EventResult | null {
+  const allResults = getEventResults();
+  const index = allResults.findIndex((r) => r.id === resultId);
+  if (index === -1) return null;
+
+  const nowIso = new Date().toISOString();
+  allResults[index].published = publish;
+  allResults[index].publishedAt = publish ? nowIso : undefined;
+  allResults[index].updatedAt = nowIso;
+  allResults[index].updatedBy = adminEmail;
+
+  saveEventResults(allResults);
+
+  const attendees = getAttendees();
+  const events = getEvents();
+  const att = attendees.find((a) => a.id === allResults[index].attendeeId);
+  const ev = events.find((e) => e.id === allResults[index].eventId);
+
+  logResultAudit({
+    action: publish ? "RESULT_PUBLISHED" : "RESULT_UNPUBLISHED",
+    adminEmail,
+    resultId: allResults[index].id,
+    attendeeId: allResults[index].attendeeId,
+    attendeeName: att?.fullName,
+    eventId: allResults[index].eventId,
+    eventCode: ev?.code,
+    details: `${publish ? "Published result to Guest Dashboard" : "Unpublished result (returned to draft)"} for ${att?.fullName || allResults[index].attendeeId}`,
+  });
+
+  return allResults[index];
+}
+
+export function deleteEventResult(
+  resultId: string,
+  adminEmail: string = "itmanger@cabuniversity.com"
+): boolean {
+  const allResults = getEventResults();
+  const target = allResults.find((r) => r.id === resultId);
+  if (!target) return false;
+
+  const filtered = allResults.filter((r) => r.id !== resultId);
+  saveEventResults(filtered);
+
+  const attendees = getAttendees();
+  const events = getEvents();
+  const att = attendees.find((a) => a.id === target.attendeeId);
+  const ev = events.find((e) => e.id === target.eventId);
+
+  logResultAudit({
+    action: "RESULT_DELETED",
+    adminEmail,
+    resultId: target.id,
+    attendeeId: target.attendeeId,
+    attendeeName: att?.fullName,
+    eventId: target.eventId,
+    eventCode: ev?.code,
+    details: `Deleted result record for ${att?.fullName || target.attendeeId}`,
+  });
+
+  return true;
+}
+
+// Result Audit Logs
+export function getResultAuditLogs(): ResultAuditLog[] {
+  initializeStorage();
+  const data = localStorage.getItem(KEYS.RESULTS_AUDIT_LOGS);
+  return data ? JSON.parse(data) : [];
+}
+
+export function logResultAudit(log: Omit<ResultAuditLog, "id" | "timestamp">): void {
+  const logs = getResultAuditLogs();
+  const nowIso = new Date().toISOString();
+  const newLog: ResultAuditLog = {
+    ...log,
+    id: `res-log-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    timestamp: nowIso,
+  };
+  logs.unshift(newLog);
+  localStorage.setItem(KEYS.RESULTS_AUDIT_LOGS, JSON.stringify(logs));
 }
 
 // Helper to format timestamps safely without ever returning "Invalid Date"
@@ -774,6 +1046,8 @@ export function exportAllData(): string {
     bookings: getAccommodationBookings(),
     mealTickets: getMealTickets(),
     resultsCertificates: getResultsCertificates(),
+    eventResults: getEventResults(),
+    resultsAuditLogs: getResultAuditLogs(),
     dpoLogs: getDpoLogs(),
     checkIns: getCheckIns(),
   };
@@ -792,6 +1066,8 @@ export function importAllData(jsonStr: string): boolean {
     if (data.bookings) localStorage.setItem(KEYS.BOOKINGS, JSON.stringify(data.bookings));
     if (data.mealTickets) localStorage.setItem(KEYS.MEAL_TICKETS, JSON.stringify(data.mealTickets));
     if (data.resultsCertificates) localStorage.setItem(KEYS.RESULTS_CERTIFICATES, JSON.stringify(data.resultsCertificates));
+    if (data.eventResults) localStorage.setItem(KEYS.EVENT_RESULTS, JSON.stringify(data.eventResults));
+    if (data.resultsAuditLogs) localStorage.setItem(KEYS.RESULTS_AUDIT_LOGS, JSON.stringify(data.resultsAuditLogs));
     if (data.dpoLogs) localStorage.setItem(KEYS.DPO_LOGS, JSON.stringify(data.dpoLogs));
     if (data.checkIns) localStorage.setItem(KEYS.CHECKINS, JSON.stringify(data.checkIns));
     return true;

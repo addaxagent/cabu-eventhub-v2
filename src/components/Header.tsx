@@ -20,9 +20,13 @@ import {
   ChevronDown,
   Wrench,
   ShieldCheck,
-  SlidersHorizontal,
 } from "lucide-react";
-import { getCurrentGuestSession, isAdminLoggedIn, setAdminLoggedIn } from "../lib/storage";
+import {
+  getCurrentGuestSession,
+  clearGuestSession,
+  isAdminLoggedIn,
+  setAdminLoggedIn,
+} from "../lib/storage";
 
 // --- Color Constants ---
 // CABU Brand Palette:
@@ -89,8 +93,9 @@ export const NavItem: React.FC<{
 export const UserMenu: React.FC<{
   adminActive: boolean;
   guestSessionPresent: boolean;
-  onLogout: () => void;
-}> = ({ adminActive, guestSessionPresent, onLogout }) => {
+  onAdminLogout: () => void;
+  onGuestLogout: () => void;
+}> = ({ adminActive, guestSessionPresent, onAdminLogout, onGuestLogout }) => {
   return (
     <div className="flex items-center gap-3">
       {adminActive ? (
@@ -100,7 +105,7 @@ export const UserMenu: React.FC<{
             <span>Admin</span>
           </div>
           <button
-            onClick={onLogout}
+            onClick={onAdminLogout}
             className="border border-[#E5E7EB] text-[#111827] hover:border-rose-300 hover:text-rose-600 hover:bg-rose-50 text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
             title="Sign Out of Admin Console"
           >
@@ -108,25 +113,23 @@ export const UserMenu: React.FC<{
             <span className="hidden sm:inline">Logout</span>
           </button>
         </>
+      ) : guestSessionPresent ? (
+        <button
+          onClick={onGuestLogout}
+          className="border border-[#E5E7EB] text-[#111827] hover:border-rose-300 hover:text-rose-600 hover:bg-rose-50 text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+          title="Sign Out of Guest Session"
+        >
+          <LogOut className="w-3.5 h-3.5 text-[#64748B] group-hover:text-rose-600" />
+          <span>Sign Out</span>
+        </button>
       ) : (
-        <>
-          {guestSessionPresent && (
-            <RouterLink
-              to="/guest/dashboard"
-              className="px-3.5 py-1.5 bg-[#0B6B3A] hover:bg-[#08522d] text-white text-xs font-bold rounded-lg flex items-center gap-1.5 shadow-xs transition-all"
-            >
-              <LayoutDashboard className="w-3.5 h-3.5" />
-              <span>My Dashboard</span>
-            </RouterLink>
-          )}
-          <RouterLink
-            to="/admin/login"
-            className="border border-[#E5E7EB] text-[#64748B] hover:text-[#111827] hover:border-[#0B6B3A] hover:bg-[#F8FAF9] text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all"
-          >
-            <Lock className="w-3.5 h-3.5 text-[#64748B]" />
-            <span className="hidden sm:inline">Admin Portal</span>
-          </RouterLink>
-        </>
+        <RouterLink
+          to="/admin/login"
+          className="border border-[#E5E7EB] text-[#64748B] hover:text-[#111827] hover:border-[#0B6B3A] hover:bg-[#F8FAF9] text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all"
+        >
+          <Lock className="w-3.5 h-3.5 text-[#64748B]" />
+          <span className="hidden sm:inline">Admin Portal</span>
+        </RouterLink>
       )}
     </div>
   );
@@ -139,7 +142,8 @@ export const MobileNav: React.FC<{
   guestSessionPresent: boolean;
   activePath: string;
   onClose: () => void;
-  onLogout: () => void;
+  onAdminLogout: () => void;
+  onGuestLogout: () => void;
   adminNavItems: NavItemConfig[];
   guestNavItems: NavItemConfig[];
 }> = ({
@@ -148,7 +152,8 @@ export const MobileNav: React.FC<{
   guestSessionPresent,
   activePath,
   onClose,
-  onLogout,
+  onAdminLogout,
+  onGuestLogout,
   adminNavItems,
   guestNavItems,
 }) => {
@@ -195,7 +200,7 @@ export const MobileNav: React.FC<{
           <div className="pt-3 border-t border-[#E5E7EB]">
             <button
               onClick={() => {
-                onLogout();
+                onAdminLogout();
                 onClose();
               }}
               className="w-full text-left flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 transition-colors"
@@ -229,27 +234,34 @@ export const MobileNav: React.FC<{
                 </RouterLink>
               );
             })}
-            {guestSessionPresent && (
-              <RouterLink
-                to="/guest/dashboard"
-                onClick={onClose}
-                className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-bold bg-[#0B6B3A] text-white transition-all shadow-xs"
+          </div>
+          {guestSessionPresent ? (
+            <div className="pt-3 border-t border-[#E5E7EB]">
+              <button
+                onClick={() => {
+                  onGuestLogout();
+                  onClose();
+                }}
+                className="w-full text-left flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 transition-colors"
               >
-                <LayoutDashboard className="w-4 h-4" />
-                <span>My Guest Dashboard</span>
+                <div className="flex items-center gap-2">
+                  <LogOut className="w-4 h-4" />
+                  <span>Sign Out</span>
+                </div>
+              </button>
+            </div>
+          ) : (
+            <div className="pt-2 border-t border-[#E5E7EB]">
+              <RouterLink
+                to="/admin/login"
+                onClick={onClose}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-[#64748B] hover:text-[#0B6B3A]"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                <span>Admin Portal Login</span>
               </RouterLink>
-            )}
-          </div>
-          <div className="pt-2 border-t border-[#E5E7EB]">
-            <RouterLink
-              to="/admin/login"
-              onClick={onClose}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-[#64748B] hover:text-[#0B6B3A]"
-            >
-              <Lock className="w-3.5 h-3.5" />
-              <span>Admin Portal Login</span>
-            </RouterLink>
-          </div>
+            </div>
+          )}
         </>
       )}
     </div>
@@ -292,6 +304,14 @@ export const MainHeader: React.FC = () => {
     navigate("/");
   };
 
+  const handleGuestLogout = () => {
+    clearGuestSession();
+    setGuestSession({});
+    navigate("/returning-guest");
+  };
+
+  const isGuestAuthenticated = Boolean(guestSession.registrationId || guestSession.attendeeId);
+
   const isActive = (path: string, exact?: boolean) => {
     if (exact) return location.pathname === path;
     if (path === "/admin") return location.pathname === "/admin";
@@ -310,17 +330,23 @@ export const MainHeader: React.FC = () => {
   ];
 
   const adminMoreNav: NavItemConfig[] = [
-    { label: "Results & Certificates", path: "/admin/results-certificates", icon: Award },
+    { label: "Results", path: "/admin/results", icon: Award },
+    { label: "Certificates", path: "/admin/results-certificates", icon: ShieldCheck },
     { label: "DPO Logs", path: "/admin/dpo-logs", icon: Terminal },
     { label: "DPO Test Utility", path: "/admin/dpo-test", icon: Wrench },
     { label: "Settings", path: "/admin/settings", icon: Settings },
   ];
 
-  const guestNavItems: NavItemConfig[] = [
-    { label: "Active Events", path: "/", icon: Calendar, exact: true },
-    { label: "Returning Guest", path: "/returning-guest", icon: UserCheck },
-    { label: "Check Status", path: "/registration/status", icon: Search },
-  ];
+  const guestNavItems: NavItemConfig[] = isGuestAuthenticated
+    ? [
+        { label: "Active Events", path: "/", icon: Calendar, exact: true },
+        { label: "My Dashboard", path: "/guest/dashboard", icon: LayoutDashboard },
+      ]
+    : [
+        { label: "Active Events", path: "/", icon: Calendar, exact: true },
+        { label: "Returning Guest", path: "/returning-guest", icon: UserCheck },
+        { label: "Check Status", path: "/registration/status", icon: Search },
+      ];
 
   const isMoreActive = adminMoreNav.some((item) => isActive(item.path));
 
@@ -401,7 +427,7 @@ export const MainHeader: React.FC = () => {
                 </div>
               </>
             ) : (
-              // Public Guest Links
+              // Guest Links (Public or Authenticated)
               guestNavItems.map((item) => (
                 <NavItem
                   key={item.path}
@@ -416,8 +442,9 @@ export const MainHeader: React.FC = () => {
           <div className="hidden lg:flex items-center">
             <UserMenu
               adminActive={adminActive}
-              guestSessionPresent={Boolean(guestSession.registrationId)}
-              onLogout={handleAdminLogout}
+              guestSessionPresent={isGuestAuthenticated}
+              onAdminLogout={handleAdminLogout}
+              onGuestLogout={handleGuestLogout}
             />
           </div>
 
@@ -425,8 +452,9 @@ export const MainHeader: React.FC = () => {
           <div className="lg:hidden flex items-center gap-2">
             <UserMenu
               adminActive={adminActive}
-              guestSessionPresent={Boolean(guestSession.registrationId)}
-              onLogout={handleAdminLogout}
+              guestSessionPresent={isGuestAuthenticated}
+              onAdminLogout={handleAdminLogout}
+              onGuestLogout={handleGuestLogout}
             />
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -443,10 +471,11 @@ export const MainHeader: React.FC = () => {
       <MobileNav
         isOpen={mobileMenuOpen}
         adminActive={adminActive}
-        guestSessionPresent={Boolean(guestSession.registrationId)}
+        guestSessionPresent={isGuestAuthenticated}
         activePath={location.pathname}
         onClose={() => setMobileMenuOpen(false)}
-        onLogout={handleAdminLogout}
+        onAdminLogout={handleAdminLogout}
+        onGuestLogout={handleGuestLogout}
         adminNavItems={[...adminPrimaryNav, ...adminMoreNav]}
         guestNavItems={guestNavItems}
       />

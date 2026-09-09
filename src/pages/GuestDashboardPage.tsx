@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
 import {
@@ -36,6 +36,7 @@ import {
   getAccommodationBookings,
   getMealTickets,
   getResultsCertificates,
+  getEventResultsByAttendee,
   getCheckIns,
   initializeStorage,
   formatSafeDate,
@@ -50,9 +51,11 @@ import {
   AccommodationBooking,
   MealTicket,
   ResultCertificate,
+  EventResult,
   CheckIn,
 } from "../types";
 import { PrintableReceipt } from "../components/PrintableReceipt";
+import { ResultCard } from "../components/ResultCard";
 
 type DashboardTab = "registration" | "payment" | "accommodation" | "checkin" | "events" | "profile" | "results";
 
@@ -76,6 +79,24 @@ export const GuestDashboardPage: React.FC = () => {
   const [allRegistrations, setAllRegistrations] = useState<Registration[]>([]);
   const [allEvents, setAllEvents] = useState<Event[]>([]);
   const [certificates, setCertificates] = useState<ResultCertificate[]>([]);
+  const [eventResults, setEventResults] = useState<EventResult[]>([]);
+
+  // Normalized unified results list
+  const normalizedResultsList = useMemo(() => {
+    const list: (EventResult | ResultCertificate)[] = [...eventResults];
+
+    for (const cert of certificates) {
+      const isDuplicate = eventResults.some(
+        (er) =>
+          (cert.registrationId && er.registrationId === cert.registrationId && er.score === cert.score) ||
+          (cert.eventId && er.eventId === cert.eventId && er.score === cert.score)
+      );
+      if (!isDuplicate) {
+        list.push(cert);
+      }
+    }
+    return list;
+  }, [eventResults, certificates]);
 
   useEffect(() => {
     initializeStorage();
@@ -130,6 +151,10 @@ export const GuestDashboardPage: React.FC = () => {
 
         const userCerts = certs.filter((c) => c.attendeeId === att.id);
         setCertificates(userCerts);
+
+        // Fetch official published academic evaluations for this attendee
+        const userResults = getEventResultsByAttendee(att.id, true);
+        setEventResults(userResults);
       }
 
       const evt = events.find((e) => e.id === targetReg?.eventId);
@@ -259,15 +284,6 @@ export const GuestDashboardPage: React.FC = () => {
                 <QrCode className="w-4 h-4" />
                 <span>Check-In QR</span>
               </button>
-
-              <button
-                onClick={handleLogout}
-                className="px-3.5 py-2.5 border border-slate-200 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 text-slate-600 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
-                title="Sign out of guest session"
-              >
-                <LogOut className="w-4 h-4" />
-                <span className="hidden sm:inline">Sign Out</span>
-              </button>
             </div>
           </div>
         </div>
@@ -305,51 +321,70 @@ export const GuestDashboardPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Tab Navigation Menu */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-1.5 shadow-2xs">
-          <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
-            {[
-              { id: "registration", label: "My Registration", icon: FileText },
-              { id: "payment", label: "Payment / Receipt", icon: CreditCard },
-              { id: "accommodation", label: "Accommodation & Dining", icon: BedDouble },
-              { id: "checkin", label: "Check-In QR Badge", icon: QrCode },
-              { id: "events", label: "My Events", icon: Calendar, badge: allRegistrations.length > 1 ? allRegistrations.length : undefined },
-              { id: "profile", label: "Attendee Profile", icon: User },
-              ...(certificates.length > 0
-                ? [{ id: "results" as DashboardTab, label: "Results & Certificates", icon: Award, badge: certificates.length }]
-                : []),
-            ].map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id as DashboardTab)}
-                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
-                    isActive
-                      ? "bg-[#0B6B3A] text-white shadow-xs"
-                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  <span>{tab.label}</span>
-                  {tab.badge && (
-                    <span
-                      className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                        isActive ? "bg-white text-[#0B6B3A]" : "bg-slate-200 text-slate-700"
+        {/* Main Dashboard Layout: Left Sidebar + Tab Content */}
+        <div className="flex flex-col lg:flex-row items-start gap-6">
+          {/* Vertical Sidebar Navigation (Desktop) / Horizontal Tabs (Mobile) */}
+          <div className="w-full lg:w-64 lg:shrink-0">
+            <div className="bg-white border border-slate-200 rounded-3xl p-3 shadow-2xs lg:sticky lg:top-24">
+              <div className="hidden lg:block px-3 py-2 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 border-b border-slate-100 mb-1.5">
+                Dashboard Menu
+              </div>
+              <div className="flex lg:flex-col gap-1 overflow-x-auto lg:overflow-visible no-scrollbar p-0.5">
+                {[
+                  { id: "registration", label: "My Registration", icon: FileText },
+                  { id: "payment", label: "Payment / Receipt", icon: CreditCard },
+                  { id: "accommodation", label: "Accommodation & Dining", icon: BedDouble },
+                  { id: "checkin", label: "Check-In QR Badge", icon: QrCode },
+                  {
+                    id: "results",
+                    label: "Results & Evaluations",
+                    icon: Award,
+                    badge: normalizedResultsList.length > 0 ? normalizedResultsList.length : undefined,
+                  },
+                  {
+                    id: "events",
+                    label: "My Events",
+                    icon: Calendar,
+                    badge: allRegistrations.length > 1 ? allRegistrations.length : undefined,
+                  },
+                  { id: "profile", label: "Attendee Profile", icon: User },
+                ].map((tab) => {
+                  const Icon = tab.icon;
+                  const isActive = activeTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id as DashboardTab)}
+                      className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer text-left whitespace-nowrap ${
+                        isActive
+                          ? "bg-[#0B6B3A] text-white shadow-xs"
+                          : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
                       }`}
                     >
-                      {tab.badge}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+                      <div className="flex items-center gap-2.5">
+                        <Icon className={`w-4 h-4 shrink-0 ${isActive ? "text-white" : "text-slate-500"}`} />
+                        <span>{tab.label}</span>
+                      </div>
+                      {tab.badge !== undefined && (
+                        <span
+                          className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ml-2 ${
+                            isActive ? "bg-white text-[#0B6B3A]" : "bg-slate-100 text-slate-700"
+                          }`}
+                        >
+                          {tab.badge}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
-        </div>
 
-        {/* TAB 1: MY REGISTRATION */}
-        {activeTab === "registration" && (
+          {/* Main Tab Content Panel */}
+          <div className="flex-1 min-w-0 w-full space-y-6">
+            {/* TAB 1: MY REGISTRATION */}
+            {activeTab === "registration" && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="md:col-span-2 bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xs">
               <div className="border-b border-slate-100 pb-4">
@@ -829,41 +864,48 @@ export const GuestDashboardPage: React.FC = () => {
           </div>
         )}
 
-        {/* TAB 7: RESULTS & CERTIFICATES */}
-        {activeTab === "results" && (
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xs">
-            <div className="border-b border-slate-100 pb-4">
-              <h3 className="text-lg font-black text-slate-900">Results & Academic Certificates</h3>
-              <p className="text-xs text-slate-500">Official grades and course certificates issued by CABU faculty</p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {certificates.map((cert) => (
-                <div
-                  key={cert.id}
-                  className="p-5 rounded-2xl bg-amber-50/70 border border-amber-200 space-y-2 text-xs text-amber-950"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono font-bold text-[11px] text-[#F58220]">
-                      {cert.certificateNumber || "Certificate Issued"}
-                    </span>
-                    <span className="font-extrabold uppercase bg-amber-200 text-amber-900 px-2 py-0.5 rounded text-[10px]">
-                      {cert.resultStatus}
-                    </span>
+            {/* TAB 7: RESULTS & EVALUATIONS */}
+            {activeTab === "results" && (
+              <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xs">
+                <div className="border-b border-slate-100 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-lg font-black text-slate-900">Official Results & Academic Evaluations</h3>
+                    <p className="text-xs text-slate-500">
+                      Verified grades, scores, and completion statuses recorded by Central Africa Baptist University faculty.
+                    </p>
                   </div>
-                  <h4 className="font-black text-sm text-slate-900">{cert.assessmentName}</h4>
-                  <p className="text-slate-600">Module: {cert.moduleName}</p>
-                  {cert.score !== undefined && (
-                    <p className="font-bold">Score: {cert.score}% ({cert.grade || "Passed"})</p>
-                  )}
-                  {cert.adminComments && (
-                    <p className="text-slate-500 italic">Comments: {cert.adminComments}</p>
-                  )}
+                  <span className="text-[11px] font-mono text-slate-400 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200 self-start sm:self-auto">
+                    Attendee: {attendee.fullName}
+                  </span>
                 </div>
-              ))}
-            </div>
+
+                {normalizedResultsList.length === 0 ? (
+                  <div className="text-center py-12 px-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+                    <div className="w-12 h-12 rounded-full bg-emerald-50 text-[#0B6B3A] flex items-center justify-center mx-auto">
+                      <Award className="w-6 h-6" />
+                    </div>
+                    <h4 className="font-bold text-base text-slate-800">No Published Results Yet</h4>
+                    <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                      Your official grades, practicum evaluations, and event completion statuses are currently being finalized by CABU faculty. As soon as results are published, they will appear here automatically.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {normalizedResultsList.map((res) => (
+                      <ResultCard
+                        key={res.id}
+                        result={res}
+                        events={allEvents}
+                        tracks={getTracks()}
+                        registrations={allRegistrations}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
       {/* Printable Receipt Modal */}

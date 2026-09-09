@@ -157,6 +157,41 @@ export interface MealTicket {
   updatedAt: string;
 }
 
+export type ResultStatus = "PASS" | "FAIL" | "COMPLETED" | "INCOMPLETE" | "PENDING";
+
+export interface EventResult {
+  id: string;
+  attendeeId: string;
+  registrationId: string;
+  eventId: string;
+  trackId?: string;
+  score?: number;
+  maxScore?: number;
+  percentage?: number;
+  grade?: string;
+  status: ResultStatus;
+  remarks?: string;
+  published: boolean;
+  publishedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: string;
+  updatedBy?: string;
+}
+
+export interface ResultAuditLog {
+  id: string;
+  action: "RESULT_CREATED" | "RESULT_UPDATED" | "RESULT_PUBLISHED" | "RESULT_UNPUBLISHED" | "RESULT_DELETED";
+  adminEmail: string;
+  resultId: string;
+  attendeeId: string;
+  attendeeName?: string;
+  eventId: string;
+  eventCode?: string;
+  details?: string;
+  timestamp: string;
+}
+
 export interface ResultCertificate {
   id: string;
   attendeeId: string;

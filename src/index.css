@@ -26,11 +26,25 @@
   --cabu-muted: #64748B;
 }
 
+html {
+  font-size: 16.5px;
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@media (min-width: 640px) {
+  html {
+    font-size: 17.25px; /* ~8% to 10% typography boost for enhanced desktop readability */
+  }
+}
+
 body {
   background-color: #F8FAFC;
   color: #0F172A;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 /* Custom Sleek Scrollbar */
@@ -58,6 +72,7 @@ body {
 
   /* Reset body and html backgrounds */
   html, body {
+    font-size: 14px !important;
     background: #ffffff !important;
     background-color: #ffffff !important;
     color: #000000 !important;

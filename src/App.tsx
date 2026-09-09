@@ -22,6 +22,7 @@ import { AdminEvents } from "./pages/admin/AdminEvents";
 import { AdminRegistrations } from "./pages/admin/AdminRegistrations";
 import { AdminPayments } from "./pages/admin/AdminPayments";
 import { AdminAccommodation } from "./pages/admin/AdminAccommodation";
+import { AdminResultsPage } from "./pages/admin/AdminResultsPage";
 import { AdminResultsCertificates } from "./pages/admin/AdminResultsCertificates";
 import { AdminCheckIn } from "./pages/admin/AdminCheckIn";
 import { AdminReports } from "./pages/admin/AdminReports";
@@ -74,6 +75,7 @@ export default function App() {
           <Route path="registrations" element={<AdminRegistrations />} />
           <Route path="payments" element={<AdminPayments />} />
           <Route path="accommodation" element={<AdminAccommodation />} />
+          <Route path="results" element={<AdminResultsPage />} />
           <Route path="results-certificates" element={<AdminResultsCertificates />} />
           <Route path="checkin" element={<AdminCheckIn />} />
           <Route path="reports" element={<AdminReports />} />
