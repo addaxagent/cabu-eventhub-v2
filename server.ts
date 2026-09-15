@@ -1216,6 +1216,16 @@ async function startServer() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`CABU EventHub server running on http://0.0.0.0:${PORT}`);
+
+    // Safe Airtel SMS configuration validation on startup
+    const airtelStatus = getAirtelConfigStatus();
+    if (!airtelStatus.configured) {
+      console.warn(
+        `\nAirtel SMS configuration incomplete.\n\nMissing:\n${airtelStatus.missingEnvVars.map((v) => `- ${v}`).join('\n')}\n`
+      );
+    } else {
+      console.log('Airtel SMS configuration: Verified (All runtime secrets present)');
+    }
   });
 }
 

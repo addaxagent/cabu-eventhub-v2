@@ -26,17 +26,27 @@ import { Link } from "react-router-dom";
 
 interface ConfigStatus {
   ok?: boolean;
+  provider?: string;
   configured: boolean;
   senderId: string;
   endpoint: string;
+  endpointConfigured?: boolean;
   runtimeEnv?: string;
+  customerIdConfigured?: boolean;
   customerIdPresent: boolean;
   maskedCustomerId: string;
+  usernameConfigured?: boolean;
   usernamePresent: boolean;
   maskedUsername: string;
+  passwordConfigured?: boolean;
   passwordPresent: boolean;
+  subAccountIdConfigured?: boolean;
   subAccountIdPresent: boolean;
   maskedSubAccountId: string;
+  lastHttpStatus?: number | null;
+  lastMessageRequestId?: string | null;
+  lastSafeProviderError?: string | null;
+  lastTimestamp?: string | null;
   missingEnvVars: string[];
   timestamp?: string;
 }
@@ -52,6 +62,8 @@ interface SmsTraceStep {
 interface SafeSmsLog {
   id: string;
   timestamp: string;
+  provider?: string;
+  channel?: string;
   purpose: "OTP_VERIFICATION" | "TEST_SMS" | "OTHER";
   originalPhone: string;
   normalizedPhone: string;
@@ -66,6 +78,7 @@ interface SafeSmsLog {
   messageLength: number;
   maskedMessagePreview: string;
   httpStatus: number | null;
+  messageRequestId?: string;
   responseContentType?: string;
   responseBody?: any;
   providerReference?: string;
@@ -157,8 +170,9 @@ export const AdminSmsDiagnostics: React.FC = () => {
         trace: data.trace,
       });
 
-      // Auto-refresh logs after dispatch
+      // Auto-refresh logs and config after dispatch
       fetchLogs();
+      fetchConfig();
     } catch (err: any) {
       setTestResult({
         success: false,
@@ -289,7 +303,138 @@ export const AdminSmsDiagnostics: React.FC = () => {
             Reading server environment configuration...
           </div>
         ) : config ? (
-          <div className="space-y-4">
+          <div className="space-y-6">
+            {/* Safe Incomplete Configuration Warning */}
+            {(!config.configured || (config.missingEnvVars && config.missingEnvVars.length > 0)) && (
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-900">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="space-y-1.5 text-xs">
+                    <h4 className="font-bold text-sm text-amber-950">
+                      Airtel SMS configuration incomplete.
+                    </h4>
+                    <p className="text-amber-800">
+                      Missing:
+                    </p>
+                    <ul className="space-y-0.5 font-mono font-semibold text-amber-950 list-disc list-inside">
+                      {config.missingEnvVars.map((v) => (
+                        <li key={v}>{v}</li>
+                      ))}
+                    </ul>
+                    <p className="text-amber-700 pt-1">
+                      SMS sending is automatically blocked until real server-side secrets are supplied.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 10-Item Safely Masked Diagnostic Summary */}
+            <div className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-2xs">
+              <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wider">
+                  Provider Diagnostics Checklist
+                </span>
+                <span className="text-[10px] text-gray-500 font-mono">
+                  HTTPS Basic Authentication
+                </span>
+              </div>
+
+              <div className="divide-y divide-gray-100 text-xs">
+                {/* 1. Provider */}
+                <div className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50/50">
+                  <span className="font-semibold text-gray-600">Provider:</span>
+                  <span className="font-bold text-gray-900">{config.provider || "Airtel Zambia"}</span>
+                </div>
+
+                {/* 2. Endpoint configured */}
+                <div className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50/50">
+                  <span className="font-semibold text-gray-600">Endpoint configured:</span>
+                  <span className={`font-bold px-2 py-0.5 rounded text-[11px] ${
+                    config.endpointConfigured ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                  }`}>
+                    {config.endpointConfigured ? "YES" : "NO"}
+                  </span>
+                </div>
+
+                {/* 3. Sender ID */}
+                <div className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50/50">
+                  <span className="font-semibold text-gray-600">Sender ID:</span>
+                  <span className="font-mono font-bold text-[#0B6B3A]">{config.senderId || "CABU"}</span>
+                </div>
+
+                {/* 4. Customer ID configured */}
+                <div className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50/50">
+                  <span className="font-semibold text-gray-600">Customer ID configured:</span>
+                  <span className={`font-bold px-2 py-0.5 rounded text-[11px] ${
+                    (config.customerIdConfigured ?? config.customerIdPresent) ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                  }`}>
+                    {(config.customerIdConfigured ?? config.customerIdPresent) ? "YES" : "NO"}
+                  </span>
+                </div>
+
+                {/* 5. Sub Account ID configured */}
+                <div className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50/50">
+                  <span className="font-semibold text-gray-600">Sub Account ID configured:</span>
+                  <span className={`font-bold px-2 py-0.5 rounded text-[11px] ${
+                    (config.subAccountIdConfigured ?? config.subAccountIdPresent) ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                  }`}>
+                    {(config.subAccountIdConfigured ?? config.subAccountIdPresent) ? "YES" : "NO"}
+                  </span>
+                </div>
+
+                {/* 6. Username configured */}
+                <div className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50/50">
+                  <span className="font-semibold text-gray-600">Username configured:</span>
+                  <span className={`font-bold px-2 py-0.5 rounded text-[11px] ${
+                    (config.usernameConfigured ?? config.usernamePresent) ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                  }`}>
+                    {(config.usernameConfigured ?? config.usernamePresent) ? "YES" : "NO"}
+                  </span>
+                </div>
+
+                {/* 7. Password configured */}
+                <div className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50/50">
+                  <span className="font-semibold text-gray-600">Password configured:</span>
+                  <span className={`font-bold px-2 py-0.5 rounded text-[11px] ${
+                    (config.passwordConfigured ?? config.passwordPresent) ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                  }`}>
+                    {(config.passwordConfigured ?? config.passwordPresent) ? "YES" : "NO"}
+                  </span>
+                </div>
+
+                {/* 8. Last HTTP status */}
+                <div className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50/50">
+                  <span className="font-semibold text-gray-600">Last HTTP status:</span>
+                  <span className="font-mono font-bold text-gray-900">
+                    {config.lastHttpStatus !== null && config.lastHttpStatus !== undefined ? `${config.lastHttpStatus}` : "None yet"}
+                  </span>
+                </div>
+
+                {/* 9. Last messageRequestId */}
+                <div className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50/50">
+                  <span className="font-semibold text-gray-600">Last messageRequestId:</span>
+                  <span className="font-mono font-bold text-gray-900 truncate max-w-xs" title={config.lastMessageRequestId || undefined}>
+                    {config.lastMessageRequestId || "None yet"}
+                  </span>
+                </div>
+
+                {/* 10. Last safe provider error */}
+                <div className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50/50">
+                  <span className="font-semibold text-gray-600">Last safe provider error:</span>
+                  <span
+                    className={`font-medium truncate max-w-sm ${
+                      config.lastSafeProviderError ? "text-red-700 font-bold" : "text-gray-500"
+                    }`}
+                    title={config.lastSafeProviderError || undefined}
+                  >
+                    {config.lastSafeProviderError || "None"}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Credential Status Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* Sender ID */}
               <div className="p-4 bg-[#F8FAF9] rounded-xl border border-gray-200">

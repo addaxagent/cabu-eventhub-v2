@@ -19,6 +19,7 @@ export interface SmsTraceStep {
 }
 
 export type SmsFailureClassification =
+  | 'AIRTEL_CONFIG_MISSING'
   | 'CONFIG_MISSING'
   | 'INVALID_PHONE'
   | 'AUTH_FAILURE_401'
@@ -32,6 +33,8 @@ export type SmsFailureClassification =
 export interface SafeSmsLog {
   id: string;
   timestamp: string;
+  provider: string; // 'Airtel'
+  channel: string;  // 'SMS'
   purpose: 'OTP_VERIFICATION' | 'TEST_SMS' | 'OTHER';
   originalPhone: string;
   normalizedPhone: string;
@@ -46,6 +49,7 @@ export interface SafeSmsLog {
   messageLength: number;
   maskedMessagePreview: string;
   httpStatus: number | null;
+  messageRequestId?: string;
   responseContentType?: string;
   responseBody?: any;
   providerReference?: string;
@@ -148,6 +152,30 @@ export function maskIdentifier(val: string): string {
 }
 
 /**
+ * Strict validator for runtime environment variables.
+ * Confirms non-empty string after trimming, and never treats documentation
+ * placeholders, fake defaults, or sample dummy IDs as configured.
+ */
+export const hasValue = (value?: string): boolean => {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return false;
+  const lower = trimmed.toLowerCase();
+  if (
+    lower.startsWith('your_') ||
+    lower.includes('placeholder') ||
+    lower.includes('some-default') ||
+    lower === 'secret' ||
+    lower === '<secret>' ||
+    lower === 'undefined' ||
+    lower === 'null'
+  ) {
+    return false;
+  }
+  return true;
+};
+
+/**
  * Masks OTP numbers in messages so raw codes are never logged
  */
 export function maskOtpMessage(msg: string): string {
@@ -239,6 +267,8 @@ export async function sendAirtelSms({
     const safeLog: SafeSmsLog = {
       id: logId,
       timestamp: nowIso,
+      provider: 'Airtel',
+      channel: 'SMS',
       purpose,
       originalPhone: phone,
       normalizedPhone: normalized || '(invalid)',
@@ -277,39 +307,46 @@ export async function sendAirtelSms({
   });
 
   // Stage 3: Airtel Configuration Validation
-  const customerId = process.env.AIRTEL_SMS_CUSTOMER_ID || '';
-  const username = process.env.AIRTEL_SMS_USERNAME || '';
-  const password = process.env.AIRTEL_SMS_PASSWORD || '';
-  const subAccountId = process.env.AIRTEL_SMS_SUBACCOUNT_ID || '';
-  const senderId = process.env.AIRTEL_SMS_SENDER_ID || 'CABU';
-  const baseUrl = process.env.AIRTEL_SMS_BASE_URL || 'https://www.airtel.co.zm/gateway/v1/sendDefaultSms';
+  const rawCustomerId = process.env.AIRTEL_SMS_CUSTOMER_ID;
+  const rawUsername = process.env.AIRTEL_SMS_USERNAME;
+  const rawPassword = process.env.AIRTEL_SMS_PASSWORD;
+  const rawSubAccountId = process.env.AIRTEL_SMS_SUBACCOUNT_ID;
+  const senderId = (process.env.AIRTEL_SMS_SENDER_ID || '').trim() || 'CABU';
+  const baseUrl = (process.env.AIRTEL_SMS_BASE_URL || '').trim() || 'https://www.airtel.co.zm/gateway/v1/sendDefaultSms';
 
-  const maskedCustId = maskIdentifier(customerId);
-  const maskedSubId = maskIdentifier(subAccountId);
-  const maskedUser = maskIdentifier(username);
+  const customerIdConfigured = hasValue(rawCustomerId);
+  const subAccountIdConfigured = hasValue(rawSubAccountId);
+  const usernameConfigured = hasValue(rawUsername);
+  const passwordConfigured = hasValue(rawPassword);
 
   const missingEnvVars: string[] = [];
-  if (!customerId) missingEnvVars.push('AIRTEL_SMS_CUSTOMER_ID');
-  if (!username) missingEnvVars.push('AIRTEL_SMS_USERNAME');
-  if (!password) missingEnvVars.push('AIRTEL_SMS_PASSWORD');
-  if (!subAccountId) missingEnvVars.push('AIRTEL_SMS_SUBACCOUNT_ID');
+  if (!customerIdConfigured) missingEnvVars.push('AIRTEL_SMS_CUSTOMER_ID');
+  if (!subAccountIdConfigured) missingEnvVars.push('AIRTEL_SMS_SUBACCOUNT_ID');
+  if (!usernameConfigured) missingEnvVars.push('AIRTEL_SMS_USERNAME');
+  if (!passwordConfigured) missingEnvVars.push('AIRTEL_SMS_PASSWORD');
 
   const isConfigured = missingEnvVars.length === 0;
 
+  const maskedCustId = customerIdConfigured ? maskIdentifier(rawCustomerId!) : '(not configured)';
+  const maskedSubId = subAccountIdConfigured ? maskIdentifier(rawSubAccountId!) : '(not configured)';
+  const maskedUser = usernameConfigured ? maskIdentifier(rawUsername!) : '(not configured)';
+
   if (!isConfigured) {
-    const err = `Airtel SMS configuration missing server environment variables: ${missingEnvVars.join(', ')}`;
+    const err = `Airtel SMS configuration incomplete. Missing: ${missingEnvVars.join(', ')}`;
     addTrace('AIRTEL_CONFIG_VALIDATED', 'FAILED', err, {
       missingVariables: missingEnvVars,
-      customerIdPresent: Boolean(customerId),
-      usernamePresent: Boolean(username),
-      passwordPresent: Boolean(password),
-      subAccountIdPresent: Boolean(subAccountId),
+      customerIdConfigured,
+      subAccountIdConfigured,
+      usernameConfigured,
+      passwordConfigured,
     });
     addTrace('SMS_FAILED', 'FAILED', `Process stopped at config validation: ${err}`);
 
     const safeLog: SafeSmsLog = {
       id: logId,
       timestamp: nowIso,
+      provider: 'Airtel',
+      channel: 'SMS',
       purpose,
       originalPhone: phone,
       normalizedPhone: normalized,
@@ -326,7 +363,7 @@ export async function sendAirtelSms({
       httpStatus: null,
       success: false,
       finalStage: 'SMS_FAILED',
-      failureClassification: 'CONFIG_MISSING',
+      failureClassification: 'AIRTEL_CONFIG_MISSING',
       errorMessage: err,
       trace,
     };
@@ -335,11 +372,18 @@ export async function sendAirtelSms({
     return {
       success: false,
       httpStatus: null,
-      error: err,
+      error: 'AIRTEL_CONFIG_MISSING',
       log: safeLog,
       trace,
     };
   }
+
+  // Trim accidental leading/trailing whitespace from runtime credentials
+  const cleanCustomerId = rawCustomerId!.trim();
+  const cleanUsername = rawUsername!.trim();
+  const cleanSubAccountId = rawSubAccountId!.trim();
+  // Do not modify the password except where technically required
+  const cleanPassword = rawPassword!;
 
   addTrace('AIRTEL_CONFIG_VALIDATED', 'SUCCESS', 'Airtel SMS credentials and configuration verified on server.', {
     customerId: maskedCustId,
@@ -349,14 +393,14 @@ export async function sendAirtelSms({
     endpoint: baseUrl,
   });
 
-  // Stage 4: SMS Payload Generated
+  // Stage 4: SMS Payload Generated (Matches working Postman request)
   const requestBody = {
-    customerId,
+    customerId: cleanCustomerId,
     senderId,
     destinationAddress: [normalized],
     message,
     metaData: {
-      subAccountId,
+      subAccountId: cleanSubAccountId,
     },
   };
 
@@ -376,14 +420,15 @@ export async function sendAirtelSms({
   });
 
   // Stage 5: Airtel Request Sent
-  const basicAuth = Buffer.from(`${username}:${password}`).toString('base64');
+  // Authorization Type: Basic Auth (dynamically encoded using runtime username and password)
+  const basicAuth = Buffer.from(`${cleanUsername}:${cleanPassword}`).toString('base64');
   addTrace('AIRTEL_REQUEST_SENT', 'INFO', `Dispatching HTTPS POST request to Airtel SMS Gateway at ${baseUrl}...`, {
     method: 'POST',
     url: baseUrl,
     headers: {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      'Authorization': 'Basic [PROTECTED_SERVER_CREDENTIALS]',
+      'Authorization': 'Basic [DYNAMIC_RUNTIME_BASIC_AUTH]',
     },
   });
 
@@ -391,6 +436,9 @@ export async function sendAirtelSms({
   let responseText = '';
   let responseContentType = '';
   let parsedResponse: any = null;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 12000); // 12-second provider timeout guard
 
   try {
     const response = await fetch(baseUrl, {
@@ -401,7 +449,9 @@ export async function sendAirtelSms({
         'Accept': 'application/json',
       },
       body: JSON.stringify(requestBody),
+      signal: controller.signal,
     });
+    clearTimeout(timeoutId);
 
     httpStatus = response.status;
     responseContentType = response.headers.get('content-type') || '';
@@ -422,34 +472,42 @@ export async function sendAirtelSms({
 
     let failureClass: SmsFailureClassification = 'SUCCESS';
     let specificError: string | undefined = undefined;
+    let messageRequestId: string | undefined = undefined;
     let providerRef: string | undefined = undefined;
     let providerMsg: string | undefined = undefined;
 
     if (parsedResponse && typeof parsedResponse === 'object') {
-      providerRef = parsedResponse.referenceId || parsedResponse.trackingId || parsedResponse.transactionId || parsedResponse.refNo;
+      messageRequestId =
+        parsedResponse.messageRequestId ||
+        parsedResponse.message_request_id ||
+        parsedResponse.referenceId ||
+        parsedResponse.trackingId ||
+        parsedResponse.transactionId ||
+        parsedResponse.refNo;
+      providerRef = messageRequestId;
       providerMsg = parsedResponse.message || parsedResponse.description || parsedResponse.statusDesc || parsedResponse.msg;
     }
 
-    if (httpStatus === 200 || httpStatus === 201 || httpStatus === 202) {
-      // Check if provider returned inner error status in 200 OK body
-      if (parsedResponse?.status === 'FAILED' || parsedResponse?.statusCode >= 400 || parsedResponse?.error) {
+    if (httpStatus >= 200 && httpStatus < 300) {
+      // 2xx response from Airtel is treated as successful submission
+      if (parsedResponse?.status === 'FAILED' || parsedResponse?.statusCode >= 400 || (parsedResponse?.error && !messageRequestId)) {
         failureClass = 'PROVIDER_REJECTED';
         specificError = providerMsg || parsedResponse?.error || `Airtel rejected payload with status ${parsedResponse?.status}`;
       } else {
         failureClass = 'SUCCESS';
       }
-    } else if (httpStatus === 401) {
-      failureClass = 'AUTH_FAILURE_401';
-      specificError = `Airtel Basic Authentication Failed (HTTP 401). Verify AIRTEL_SMS_USERNAME and AIRTEL_SMS_PASSWORD. Provider response: ${providerMsg || responseText.slice(0, 200)}`;
-    } else if (httpStatus === 403) {
-      failureClass = 'PERMISSION_DENIED_403';
-      specificError = `Airtel Permission Denied (HTTP 403). Customer ID (${maskedCustId}), SubAccount ID (${maskedSubId}), or Sender ID (${senderId}) not authorized. Provider response: ${providerMsg || responseText.slice(0, 200)}`;
     } else if (httpStatus === 400) {
       failureClass = 'BAD_REQUEST_400';
-      specificError = `Airtel Bad Request (HTTP 400). Check payload parameters and format. Provider response: ${providerMsg || responseText.slice(0, 200)}`;
+      specificError = `Airtel validation/account error (HTTP 400). Check payload parameters and format. Provider response: ${providerMsg || responseText.slice(0, 200)}`;
+    } else if (httpStatus === 401) {
+      failureClass = 'AUTH_FAILURE_401';
+      specificError = `Airtel authentication/configuration issue (HTTP 401). Verify AIRTEL_SMS_USERNAME and AIRTEL_SMS_PASSWORD. Provider response: ${providerMsg || responseText.slice(0, 200)}`;
+    } else if (httpStatus === 403) {
+      failureClass = 'PERMISSION_DENIED_403';
+      specificError = `Airtel permission denied (HTTP 403). Customer ID (${maskedCustId}), SubAccount ID (${maskedSubId}), or Sender ID (${senderId}) not authorized. Provider response: ${providerMsg || responseText.slice(0, 200)}`;
     } else if (httpStatus >= 500) {
       failureClass = 'GATEWAY_ERROR_5XX';
-      specificError = `Airtel SMS Gateway Internal Error (HTTP ${httpStatus}). Provider response: ${providerMsg || responseText.slice(0, 200)}`;
+      specificError = `Airtel service unavailable (HTTP ${httpStatus}). Provider response: ${providerMsg || responseText.slice(0, 200)}`;
     } else {
       failureClass = 'PROVIDER_REJECTED';
       specificError = `Airtel gateway returned HTTP ${httpStatus}. Provider response: ${providerMsg || responseText.slice(0, 200)}`;
@@ -459,7 +517,7 @@ export async function sendAirtelSms({
 
     if (isSuccess) {
       addTrace('SMS_ACCEPTED', 'SUCCESS', `Airtel accepted SMS for delivery to ${normalized} (Sender: ${senderId}).`, {
-        reference: providerRef || '(provider accepted)',
+        messageRequestId: messageRequestId || providerRef || '(provider accepted)',
         message: providerMsg || 'SMS queued successfully',
       });
     } else {
@@ -467,12 +525,15 @@ export async function sendAirtelSms({
         classification: failureClass,
         providerMessage: providerMsg,
         providerReference: providerRef,
+        messageRequestId,
       });
     }
 
     const safeLog: SafeSmsLog = {
       id: logId,
       timestamp: nowIso,
+      provider: 'Airtel',
+      channel: 'SMS',
       purpose,
       originalPhone: phone,
       normalizedPhone: normalized,
@@ -487,6 +548,7 @@ export async function sendAirtelSms({
       messageLength: message.length,
       maskedMessagePreview: maskOtpMessage(message),
       httpStatus,
+      messageRequestId: messageRequestId || providerRef,
       responseContentType,
       responseBody: parsedResponse,
       providerReference: providerRef,
@@ -509,15 +571,24 @@ export async function sendAirtelSms({
       trace,
     };
   } catch (error: any) {
-    const netErr = error.message || 'Network exception while connecting to Airtel SMS gateway';
+    clearTimeout(timeoutId);
+    const isTimeout = error.name === 'AbortError' || error.message?.toLowerCase().includes('timeout') || error.code === 'ETIMEDOUT';
+    const failureClass: SmsFailureClassification = isTimeout ? 'GATEWAY_ERROR_5XX' : 'NETWORK_EXCEPTION';
+    const netErr = isTimeout
+      ? 'Airtel SMS Gateway request timed out (temporary provider failure).'
+      : (error.message || 'Network exception while connecting to Airtel SMS gateway');
+
     addTrace('AIRTEL_RESPONSE_RECEIVED', 'FAILED', `Network/fetch failure connecting to ${baseUrl}: ${netErr}`, {
       errorMessage: netErr,
+      isTimeout,
     });
     addTrace('SMS_FAILED', 'FAILED', `Process failed due to network exception: ${netErr}`);
 
     const safeLog: SafeSmsLog = {
       id: logId,
       timestamp: nowIso,
+      provider: 'Airtel',
+      channel: 'SMS',
       purpose,
       originalPhone: phone,
       normalizedPhone: normalized,
@@ -534,7 +605,7 @@ export async function sendAirtelSms({
       httpStatus: null,
       success: false,
       finalStage: 'SMS_FAILED',
-      failureClassification: 'NETWORK_EXCEPTION',
+      failureClassification: failureClass,
       errorMessage: netErr,
       trace,
     };
@@ -578,6 +649,16 @@ export async function sendOtpToPhone({
   }
 
   const now = Date.now();
+
+  // 0. Pre-validate Airtel configuration
+  const airtelStatus = getAirtelConfigStatus();
+  if (!airtelStatus.configured) {
+    return {
+      success: false,
+      message: 'SMS verification is temporarily unavailable. Please use Email verification.',
+      errorType: 'AIRTEL_CONFIG_MISSING',
+    };
+  }
 
   // 1. Check Rate Limits (Max 5 requests per 15 min per phone / IP)
   if (!checkRateLimit(normalized, phoneSendTimestamps, 5, 15 * 60 * 1000)) {
@@ -625,7 +706,7 @@ export async function sendOtpToPhone({
   };
 
   // 4. Dispatch SMS via Airtel
-  const smsText = `Your CABU EventHub verification code is ${otp}. It expires in 5 minutes. Do not share this code.`;
+  const smsText = `Your CABU EventHub verification code is ${otp}. It expires in 5 minutes.`;
 
   const sendResult = await sendAirtelSms({
     phone: normalized,
@@ -635,9 +716,18 @@ export async function sendOtpToPhone({
 
   if (!sendResult.success) {
     // Do not save OTP if delivery failed
+    const isConfigMissing =
+      sendResult.error === 'AIRTEL_CONFIG_MISSING' ||
+      sendResult.log.failureClassification === 'AIRTEL_CONFIG_MISSING' ||
+      sendResult.log.failureClassification === 'CONFIG_MISSING';
+
+    const guestMessage = isConfigMissing
+      ? 'SMS verification is temporarily unavailable. Please use Email verification.'
+      : 'We could not send the SMS verification code right now. Please try again or use Email verification.';
+
     return {
       success: false,
-      message: sendResult.error || 'We could not send your verification code. Please try again shortly.',
+      message: guestMessage,
       errorType: sendResult.log.failureClassification || 'SMS_DELIVERY_FAILED',
       logId: sendResult.log.id,
       trace: sendResult.trace,
@@ -768,33 +858,51 @@ export function isPhoneVerifiedOnServer(phone: string): boolean {
  * Returns safe Airtel SMS configuration health status without exposing any secrets
  */
 export function getAirtelConfigStatus() {
-  const customerId = process.env.AIRTEL_SMS_CUSTOMER_ID || '';
-  const username = process.env.AIRTEL_SMS_USERNAME || '';
-  const password = process.env.AIRTEL_SMS_PASSWORD || '';
-  const subAccountId = process.env.AIRTEL_SMS_SUBACCOUNT_ID || '';
-  const senderId = process.env.AIRTEL_SMS_SENDER_ID || 'CABU';
-  const baseUrl = process.env.AIRTEL_SMS_BASE_URL || 'https://www.airtel.co.zm/gateway/v1/sendDefaultSms';
+  const rawCustomerId = process.env.AIRTEL_SMS_CUSTOMER_ID;
+  const rawUsername = process.env.AIRTEL_SMS_USERNAME;
+  const rawPassword = process.env.AIRTEL_SMS_PASSWORD;
+  const rawSubAccountId = process.env.AIRTEL_SMS_SUBACCOUNT_ID;
+  const senderId = (process.env.AIRTEL_SMS_SENDER_ID || '').trim() || 'CABU';
+  const baseUrl = (process.env.AIRTEL_SMS_BASE_URL || '').trim() || 'https://www.airtel.co.zm/gateway/v1/sendDefaultSms';
 
-  const isConfigured = Boolean(customerId && username && password && subAccountId);
+  const customerIdConfigured = hasValue(rawCustomerId);
+  const subAccountIdConfigured = hasValue(rawSubAccountId);
+  const usernameConfigured = hasValue(rawUsername);
+  const passwordConfigured = hasValue(rawPassword);
+  const endpointConfigured = Boolean(baseUrl && baseUrl.startsWith('http'));
+
+  const missingEnvVars: string[] = [];
+  if (!customerIdConfigured) missingEnvVars.push('AIRTEL_SMS_CUSTOMER_ID');
+  if (!subAccountIdConfigured) missingEnvVars.push('AIRTEL_SMS_SUBACCOUNT_ID');
+  if (!usernameConfigured) missingEnvVars.push('AIRTEL_SMS_USERNAME');
+  if (!passwordConfigured) missingEnvVars.push('AIRTEL_SMS_PASSWORD');
+
+  const isConfigured = missingEnvVars.length === 0 && endpointConfigured;
+  const lastLog = smsLogs.length > 0 ? smsLogs[0] : null;
 
   return {
+    provider: 'Airtel Zambia',
     configured: isConfigured,
     senderId,
     endpoint: baseUrl,
+    endpointConfigured,
     runtimeEnv: process.env.NODE_ENV || 'production',
-    customerIdPresent: Boolean(customerId),
-    maskedCustomerId: maskIdentifier(customerId),
-    usernamePresent: Boolean(username),
-    maskedUsername: maskIdentifier(username),
-    passwordPresent: Boolean(password),
-    subAccountIdPresent: Boolean(subAccountId),
-    maskedSubAccountId: maskIdentifier(subAccountId),
-    missingEnvVars: [
-      !customerId && 'AIRTEL_SMS_CUSTOMER_ID',
-      !username && 'AIRTEL_SMS_USERNAME',
-      !password && 'AIRTEL_SMS_PASSWORD',
-      !subAccountId && 'AIRTEL_SMS_SUBACCOUNT_ID',
-    ].filter(Boolean),
+    customerIdConfigured,
+    customerIdPresent: customerIdConfigured,
+    maskedCustomerId: customerIdConfigured ? maskIdentifier(rawCustomerId!) : '(not configured)',
+    subAccountIdConfigured,
+    subAccountIdPresent: subAccountIdConfigured,
+    maskedSubAccountId: subAccountIdConfigured ? maskIdentifier(rawSubAccountId!) : '(not configured)',
+    usernameConfigured,
+    usernamePresent: usernameConfigured,
+    maskedUsername: usernameConfigured ? maskIdentifier(rawUsername!) : '(not configured)',
+    passwordConfigured,
+    passwordPresent: passwordConfigured,
+    lastHttpStatus: lastLog ? lastLog.httpStatus : null,
+    lastMessageRequestId: lastLog ? (lastLog.messageRequestId || lastLog.providerReference || null) : null,
+    lastSafeProviderError: lastLog ? (lastLog.errorMessage || null) : null,
+    lastTimestamp: lastLog ? lastLog.timestamp : null,
+    missingEnvVars,
   };
 }
 
