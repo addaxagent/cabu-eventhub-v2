@@ -39,6 +39,13 @@ export const DpoReturnPage: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [targetRegistrationRef, setTargetRegistrationRef] = useState<string | null>(null);
   const [eventSlug, setEventSlug] = useState<string | null>(null);
+  const [isDirectTest, setIsDirectTest] = useState(false);
+  const [testResultDetails, setTestResultDetails] = useState<{
+    amount: number;
+    token?: string;
+    transRef?: string;
+    explanation?: string;
+  } | null>(null);
 
   const transId = searchParams.get("TransID");
   const transactionToken = searchParams.get("TransactionToken") || searchParams.get("transToken");
@@ -74,16 +81,26 @@ export const DpoReturnPage: React.FC = () => {
       }
 
       const registration = registrations.find((r) => r.id === payment.registrationId);
-      if (!registration) {
+      const isDirectTestPayment =
+        !registration ||
+        payment.registrationId.startsWith("TEST-") ||
+        (companyRef && (companyRef.includes("TEST") || companyRef.includes("QUICK")));
+
+      if (!registration && !isDirectTestPayment) {
         setStatusState("failed");
         setErrorMessage("Matching event registration record not found.");
         setVerifying(false);
         return;
       }
 
-      setTargetRegistrationRef(registration.registrationReference);
+      const fallbackRef = companyRef || payment.dpoTransactionReference || "TEST-REG-0001";
+      if (registration) {
+        setTargetRegistrationRef(registration.registrationReference);
+      } else {
+        setIsDirectTest(true);
+      }
 
-      const attendee = attendees.find((a) => a.id === registration.attendeeId);
+      const attendee = registration ? attendees.find((a) => a.id === registration.attendeeId) : null;
 
       // Call Server API `/api/dpo/verify-token`
       const apiRes = await fetch("/api/dpo/verify-token", {
@@ -92,7 +109,7 @@ export const DpoReturnPage: React.FC = () => {
         body: JSON.stringify({
           transactionToken: transactionToken || payment.dpoTransToken,
           companyRef: companyRef || payment.dpoTransactionReference,
-          registrationReference: registration.registrationReference,
+          registrationReference: registration ? registration.registrationReference : fallbackRef,
         }),
       });
 
@@ -121,6 +138,44 @@ export const DpoReturnPage: React.FC = () => {
         (verifyData.resultExplanation && verifyData.resultExplanation.toLowerCase().includes("pending"));
 
       if (isSuccess) {
+        // Direct Test Payment Flow (No Registration)
+        if (!registration) {
+          const receiptNumber = payment.receiptNumber || generateReceiptNumber(fallbackRef);
+          payment.paymentStatus = "verified";
+          payment.receiptNumber = receiptNumber;
+          payment.verifiedAt = new Date().toISOString();
+          payment.amountVerified = payment.amountDue || 1;
+          payment.rawVerifyTokenResponse = verifyData;
+          if (transId) payment.dpoTransRef = transId;
+          savePayments(payments);
+
+          logDpoTransaction({
+            registrationId: payment.registrationId || "TEST-DIRECT",
+            transactionReference: payment.dpoTransactionReference,
+            dpoTransToken: transactionToken || payment.dpoTransToken,
+            dpoTransRef: transId || payment.dpoTransRef,
+            eventType: "success",
+            resultCode: resultCode || "000",
+            resultExplanation: verifyData.resultExplanation || "Verified and Confirmed (Direct Test Payment)",
+            responsePayload: verifyData,
+            parsedResult: verifyData,
+            localStatusBefore: "dpo_redirected",
+            localStatusAfter: "verified",
+          });
+
+          setTestResultDetails({
+            amount: payment.amountDue || 1,
+            token: transactionToken || payment.dpoTransToken,
+            transRef: transId || payment.dpoTransRef,
+            explanation: verifyData.resultExplanation || "Transaction authorized and verified with DPO",
+          });
+
+          setIsDirectTest(true);
+          setStatusState("success");
+          setVerifying(false);
+          return;
+        }
+
         // 1. Generate Receipt Number
         const receiptNumber =
           registration.receiptNumber ||
@@ -218,11 +273,13 @@ export const DpoReturnPage: React.FC = () => {
         payment.rawVerifyTokenResponse = verifyData;
         savePayments(payments);
 
-        registration.paymentStatus = "verification_pending";
-        saveRegistrations(registrations);
+        if (registration) {
+          registration.paymentStatus = "verification_pending";
+          saveRegistrations(registrations);
+        }
 
         logDpoTransaction({
-          registrationId: registration.id,
+          registrationId: registration ? registration.id : (payment.registrationId || "TEST-DIRECT"),
           transactionReference: payment.dpoTransactionReference,
           eventType: "verify",
           resultCode: resultCode,
@@ -239,11 +296,13 @@ export const DpoReturnPage: React.FC = () => {
         payment.rawVerifyTokenResponse = verifyData;
         savePayments(payments);
 
-        registration.paymentStatus = "payment_failed";
-        saveRegistrations(registrations);
+        if (registration) {
+          registration.paymentStatus = "payment_failed";
+          saveRegistrations(registrations);
+        }
 
         logDpoTransaction({
-          registrationId: registration.id,
+          registrationId: registration ? registration.id : (payment.registrationId || "TEST-DIRECT"),
           transactionReference: payment.dpoTransactionReference,
           eventType: "failed",
           resultCode: resultCode || "ERR",
@@ -291,7 +350,67 @@ export const DpoReturnPage: React.FC = () => {
         )}
 
         {/* State 2: Success */}
-        {statusState === "success" && (
+        {statusState === "success" && isDirectTest && (
+          <div className="space-y-5 py-4">
+            <div className="w-16 h-16 rounded-full bg-emerald-100 text-[#0B6B3A] flex items-center justify-center mx-auto">
+              <CheckCircle2 className="w-10 h-10 text-[#0B6B3A]" />
+            </div>
+            <div>
+              <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#0B6B3A] bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                Direct DPO Test Payment Verified
+              </span>
+              <h1 className="text-2xl sm:text-3xl font-black text-slate-900 mt-2">
+                K1 Payment Authorized!
+              </h1>
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed max-w-sm mx-auto">
+              Your direct K1.00 DPO sandbox test payment was processed and verified successfully without going through registration.
+            </p>
+
+            <div className="bg-slate-50 rounded-2xl p-4 text-left border border-slate-200 text-xs space-y-2">
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-medium">Test Amount:</span>
+                <span className="font-bold text-slate-900">ZMW 1.00</span>
+              </div>
+              {testResultDetails?.token && (
+                <div className="flex justify-between items-center gap-2">
+                  <span className="text-slate-500 font-medium">TransToken:</span>
+                  <span className="font-mono text-[11px] text-slate-700 truncate max-w-[200px]" title={testResultDetails.token}>
+                    {testResultDetails.token}
+                  </span>
+                </div>
+              )}
+              {testResultDetails?.transRef && (
+                <div className="flex justify-between">
+                  <span className="text-slate-500 font-medium">DPO Reference:</span>
+                  <span className="font-mono font-bold text-slate-900">{testResultDetails.transRef}</span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-medium">Result:</span>
+                <span className="font-semibold text-emerald-700">000 - Verified Successfully</span>
+              </div>
+            </div>
+
+            <div className="pt-3 flex flex-col gap-2.5">
+              <Link
+                to="/"
+                className="inline-flex items-center justify-center gap-2 px-6 py-3.5 bg-[#0B6B3A] hover:bg-[#08522d] text-white font-bold text-xs rounded-xl shadow-xs transition-all w-full"
+              >
+                <span>Return to Homepage</span>
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+              <Link
+                to="/admin/payments/dpo-test"
+                className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-all w-full"
+              >
+                <span>View in Admin DPO Diagnostics</span>
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {statusState === "success" && !isDirectTest && (
           <div className="space-y-5 py-4">
             <div className="w-16 h-16 rounded-full bg-emerald-100 text-[#0B6B3A] flex items-center justify-center mx-auto">
               <CheckCircle2 className="w-10 h-10 text-[#0B6B3A]" />

@@ -12,18 +12,127 @@ import {
   Sparkles,
   ShieldCheck,
   Users,
+  Zap,
+  Loader2,
+  AlertCircle,
+  ExternalLink,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
-import { getEvents, getTracks, initializeStorage } from "../lib/storage";
+import {
+  getEvents,
+  getTracks,
+  getPayments,
+  savePayments,
+  logDpoTransaction,
+  initializeStorage,
+} from "../lib/storage";
 import { Event } from "../types";
 
 export const HomePage: React.FC = () => {
   const [events, setEvents] = useState<Event[]>([]);
+  const [isInitiatingDpo, setIsInitiatingDpo] = useState(false);
+  const [dpoError, setDpoError] = useState<string | null>(null);
+  const [showCustomDetails, setShowCustomDetails] = useState(false);
+  const [payerEmail, setPayerEmail] = useState("chapel@cabuniversity.com");
+  const [payerPhone, setPayerPhone] = useState("0971234567");
 
   useEffect(() => {
     initializeStorage();
     const loaded = getEvents().filter((e) => e.status === "published" && e.isActive);
     setEvents(loaded);
   }, []);
+
+  const handleDirectDpoTestPayment = async () => {
+    setIsInitiatingDpo(true);
+    setDpoError(null);
+
+    const transactionReference = `CABU-DPO-QUICK-${Date.now()}`;
+    const testRegId = `TEST-QUICK-${Date.now()}`;
+
+    try {
+      const phoneDigits = payerPhone.replace(/\D/g, "");
+      const cleanPhone = phoneDigits.startsWith("260")
+        ? phoneDigits
+        : phoneDigits.startsWith("0")
+        ? "26" + phoneDigits
+        : "260" + phoneDigits;
+
+      const res = await fetch("/api/dpo/create-token-test", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+        },
+        body: JSON.stringify({
+          registrationReference: testRegId,
+          transactionReference,
+          amount: 1.0,
+          currency: "ZMW",
+          firstName: "Direct",
+          lastName: "Tester",
+          email: payerEmail.trim() || "chapel@cabuniversity.com",
+          phone: cleanPhone || "260971234567",
+          eventName: "CABU EventHub Direct DPO Test (K1)",
+        }),
+      });
+
+      const responseData = await res.json().catch(() => ({
+        success: false,
+        message: "Failed to parse DPO server response.",
+      }));
+
+      if (responseData.success && responseData.paymentUrl) {
+        // Record test payment in local storage
+        const currentPayments = getPayments();
+        currentPayments.push({
+          id: `pay-${Date.now()}`,
+          registrationId: testRegId,
+          amountDue: 1.0,
+          currency: "ZMW",
+          paymentProvider: "DPO",
+          paymentReference: transactionReference,
+          dpoTransactionReference: transactionReference,
+          dpoTransToken: responseData.transToken,
+          dpoTransRef: responseData.transRef,
+          paymentStatus: "dpo_redirected",
+          rawCreateTokenResponse: responseData.rawResponse,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+        savePayments(currentPayments);
+
+        logDpoTransaction({
+          registrationId: testRegId,
+          transactionReference,
+          dpoTransToken: responseData.transToken,
+          dpoTransRef: responseData.transRef,
+          eventType: "redirect",
+          resultCode: responseData.result || "000",
+          resultExplanation: "Direct K1 DPO test initiated from Homepage card",
+          maskedXmlRequest: responseData.maskedXmlRequest,
+          rawXmlResponse: responseData.rawResponse,
+          httpStatus: responseData.httpStatus || 200,
+          responsePayload: responseData,
+          localStatusAfter: "dpo_redirected",
+        });
+
+        // Direct hand-off to DPO payment gateway
+        window.location.href = responseData.paymentUrl;
+      } else {
+        const errorMsg =
+          responseData.errorMessage ||
+          responseData.resultExplanation ||
+          responseData.message ||
+          "DPO could not generate a payment token.";
+        setDpoError(errorMsg);
+        setIsInitiatingDpo(false);
+      }
+    } catch (err: any) {
+      setDpoError(err.message || "Network error while connecting to DPO.");
+      setIsInitiatingDpo(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#F8FAFC]">
@@ -193,6 +302,161 @@ export const HomePage: React.FC = () => {
                 </div>
               );
             })}
+
+            {/* DPO 1-Click Direct Test Payment Card */}
+            <div
+              id="dpo-direct-test-card"
+              className="bg-linear-to-br from-white via-amber-50/20 to-emerald-50/25 rounded-3xl border-2 border-dashed border-[#F58220]/60 shadow-xs hover:shadow-md hover:border-[#F58220] transition-all overflow-hidden flex flex-col justify-between relative"
+            >
+              <div className="p-6 sm:p-8 space-y-5">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <span className="bg-[#F58220] text-white text-xs font-black px-3 py-1 rounded-xl uppercase tracking-wider shadow-2xs">
+                      DPO-TEST
+                    </span>
+                    <span className="bg-amber-100 text-amber-950 border border-amber-300 text-[11px] font-black px-2.5 py-1 rounded-xl uppercase tracking-wider flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 text-[#F58220]" />
+                      Direct Test
+                    </span>
+                  </div>
+                  <span className="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200/80 px-3 py-1 rounded-full flex items-center gap-1.5 shadow-2xs">
+                    <Zap className="w-3.5 h-3.5 text-emerald-600 fill-emerald-600" />
+                    Bypass Registration
+                  </span>
+                </div>
+
+                <div>
+                  <h3 className="text-2xl font-bold text-slate-900 leading-snug">
+                    DPO Test Payment (Direct K1)
+                  </h3>
+                  <p className="text-xs font-bold text-[#F58220] mt-1 uppercase tracking-wide">
+                    Live Gateway Sandbox • 1-Click Instant Hand-Off
+                  </p>
+                </div>
+
+                <p className="text-sm text-slate-600 leading-relaxed">
+                  Directly test the live Direct Pay Online (DPO) gateway with a nominal K1 charge. Skip attendee forms, NRC validation, SMS OTP, and room selection. Generates a token and opens the official DPO payment portal.
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 text-xs font-medium text-slate-700">
+                  <div className="flex items-center gap-2 bg-white/90 p-3 rounded-xl border border-amber-200/60 shadow-2xs">
+                    <CreditCard className="w-4 h-4 text-[#F58220] shrink-0" />
+                    <span>Exact Charge: <strong className="text-slate-900">ZMW 1.00</strong></span>
+                  </div>
+                  <div className="flex items-center gap-2 bg-white/90 p-3 rounded-xl border border-amber-200/60 shadow-2xs">
+                    <ShieldCheck className="w-4 h-4 text-[#0B6B3A] shrink-0" />
+                    <span>Gateway: <strong className="text-slate-900">Live DPO v6 API</strong></span>
+                  </div>
+                  <div className="flex items-center gap-2 bg-white/90 p-3 rounded-xl border border-amber-200/60 shadow-2xs">
+                    <ExternalLink className="w-4 h-4 text-indigo-600 shrink-0" />
+                    <span>Hosted: <strong className="text-slate-900">DPO Secure Checkout</strong></span>
+                  </div>
+                  <div className="flex items-center gap-2 bg-white/90 p-3 rounded-xl border border-amber-200/60 shadow-2xs">
+                    <Zap className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Flow: <strong className="text-slate-900">Immediate Redirect</strong></span>
+                  </div>
+                </div>
+
+                {/* Optional Attendee Customization */}
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowCustomDetails(!showCustomDetails)}
+                    className="text-xs font-semibold text-slate-600 hover:text-slate-900 flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <span>{showCustomDetails ? "Hide Payer Details" : "Customize Payer Phone & Email (Optional)"}</span>
+                    {showCustomDetails ? (
+                      <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
+                    ) : (
+                      <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                    )}
+                  </button>
+
+                  {showCustomDetails && (
+                    <div className="mt-3 p-3.5 bg-white rounded-2xl border border-slate-200/90 shadow-2xs space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                            Payer Email (for DPO Receipt)
+                          </label>
+                          <input
+                            type="email"
+                            value={payerEmail}
+                            onChange={(e) => setPayerEmail(e.target.value)}
+                            placeholder="chapel@cabuniversity.com"
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-[#F58220]"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                            Mobile Phone (for Mobile Money OTP)
+                          </label>
+                          <input
+                            type="tel"
+                            value={payerPhone}
+                            onChange={(e) => setPayerPhone(e.target.value)}
+                            placeholder="0971234567"
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-[#F58220]"
+                          />
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-slate-400">
+                        Defaulted to your account email. If testing Mobile Money (Airtel/MTN), set your phone number so DPO can send the payment prompt.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Error Banner */}
+                {dpoError && (
+                  <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-start gap-2.5">
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <p className="font-bold">DPO Token Generation Error</p>
+                      <p className="text-rose-700">{dpoError}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Footer */}
+              <div className="bg-amber-50/60 border-t border-amber-200/70 p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div>
+                  <span className="text-xs font-medium text-slate-500 block">Direct Test Fee</span>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-2xl font-black text-[#F58220]">
+                      ZMW 1.00
+                    </span>
+                    <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-md">
+                      Instant DPO Hand-off
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 w-full sm:w-auto">
+                  <button
+                    id="btn-pay-k1-dpo-direct"
+                    type="button"
+                    onClick={handleDirectDpoTestPayment}
+                    disabled={isInitiatingDpo}
+                    className="w-full sm:w-auto px-6 py-3 text-xs font-black text-white bg-linear-to-r from-[#F58220] to-[#e07318] hover:from-[#e07318] hover:to-[#c8620f] active:scale-[0.98] rounded-xl transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {isInitiatingDpo ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin text-white" />
+                        <span>Connecting to DPO Gateway...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CreditCard className="w-4 h-4 text-white" />
+                        <span>Pay K1 via DPO Now</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 
