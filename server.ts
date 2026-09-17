@@ -23,6 +23,7 @@ import {
   requestAdminPasswordReset,
   validateResetToken,
   executePasswordReset,
+  changeAdminPassword,
   getAdminEmail,
 } from './server/adminAuth';
 import {
@@ -175,6 +176,31 @@ app.post('/api/admin/reset-password', (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Internal server error while processing password reset.',
+    });
+  }
+});
+
+// Change Admin Password Endpoint (requires current password, no email needed)
+app.post('/api/admin/change-password', (req, res) => {
+  res.setHeader("Content-Type", "application/json");
+  try {
+    const { email, currentPassword, newPassword } = req.body || {};
+
+    if (!email || !currentPassword || !newPassword) {
+      res.status(400).json({
+        success: false,
+        message: 'Email, current password, and new password are all required.',
+      });
+      return;
+    }
+
+    const result = changeAdminPassword({ email, currentPassword, newPassword });
+    res.status(result.success ? 200 : 400).json(result);
+  } catch (err: any) {
+    console.error('[Admin Change Password] Exception:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error while changing password.',
     });
   }
 });

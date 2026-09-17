@@ -308,6 +308,59 @@ export function validateResetToken(rawToken: string): {
 }
 
 /**
+ * Changes the administrator password for an already-authenticated admin,
+ * proven by re-supplying the current password (no email dependency).
+ */
+export function changeAdminPassword({
+  email,
+  currentPassword,
+  newPassword,
+}: {
+  email: string;
+  currentPassword: string;
+  newPassword: string;
+}): {
+  success: boolean;
+  message: string;
+} {
+  if (!verifyAdminCredentials(email, currentPassword)) {
+    return {
+      success: false,
+      message: 'Current password is incorrect.',
+    };
+  }
+
+  if (!newPassword || newPassword.length < 8) {
+    return {
+      success: false,
+      message: 'New password must be at least 8 characters long.',
+    };
+  }
+
+  const { hash, salt } = hashPassword(newPassword);
+  const primaryAdmin = getAdminEmail();
+  const updatedAccount: AdminAccount = {
+    email: primaryAdmin,
+    name: 'CABU EventHub Administrator',
+    passwordHash: hash,
+    passwordSalt: salt,
+    updatedAt: Date.now(),
+  };
+
+  adminAccounts.set(primaryAdmin, updatedAccount);
+  adminAccounts.set(normalizeAdminIdentifier(email), updatedAccount);
+  adminAccounts.set('primary_admin', updatedAccount);
+  adminAccounts.set('itmanger@cabuniversity.com', updatedAccount);
+  adminAccounts.set('admin@cabuniversity.com', updatedAccount);
+  adminAccounts.set('admin@cabu.edu.zm', updatedAccount);
+
+  return {
+    success: true,
+    message: 'Password updated successfully.',
+  };
+}
+
+/**
  * Executes the password reset with a valid token
  */
 export function executePasswordReset({

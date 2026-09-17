@@ -17,6 +17,14 @@ export const AdminSettings: React.FC = () => {
   const [sendingTestSms, setSendingTestSms] = useState(false);
   const [testSmsResult, setTestSmsResult] = useState<{ success: boolean; message: string; details?: any } | null>(null);
 
+  // Change admin password state
+  const [pwEmail, setPwEmail] = useState("itmanger@cabuniversity.com");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [passwordChangeResult, setPasswordChangeResult] = useState<{ success: boolean; message: string } | null>(null);
+
   useEffect(() => {
     initializeStorage();
     checkConfigs();
@@ -94,6 +102,40 @@ export const AdminSettings: React.FC = () => {
     }
   };
 
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordChangeResult(null);
+
+    if (newPassword !== confirmPassword) {
+      setPasswordChangeResult({ success: false, message: "New password and confirmation do not match." });
+      return;
+    }
+    if (newPassword.length < 8) {
+      setPasswordChangeResult({ success: false, message: "New password must be at least 8 characters long." });
+      return;
+    }
+
+    setChangingPassword(true);
+    try {
+      const res = await fetch("/api/admin/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: pwEmail.trim(), currentPassword, newPassword }),
+      });
+      const data = await res.json();
+      setPasswordChangeResult({ success: data.success, message: data.message });
+      if (data.success) {
+        setCurrentPassword("");
+        setNewPassword("");
+        setConfirmPassword("");
+      }
+    } catch (err: any) {
+      setPasswordChangeResult({ success: false, message: err.message || "Network error while changing password." });
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
   const handleResetData = () => {
     if (confirm("WARNING: This will reset all demo registrations, attendees, and bedspaces to clean default seed data. Continue?")) {
       resetDemoData();
@@ -118,6 +160,98 @@ export const AdminSettings: React.FC = () => {
           <span>{notice}</span>
         </div>
       )}
+
+      {/* Change Admin Password Box */}
+      <div className="bg-white p-8 rounded-3xl border border-gray-200 shadow-sm space-y-6">
+        <div className="flex items-center gap-3 text-[#0B6B3A] border-b border-gray-100 pb-4">
+          <div className="w-10 h-10 rounded-2xl bg-[#0B6B3A]/10 flex items-center justify-center">
+            <KeyRound className="w-5 h-5 text-[#0B6B3A]" />
+          </div>
+          <div>
+            <h2 className="text-lg font-black text-[#111827]">Change Administrator Password</h2>
+            <p className="text-xs text-[#64748B]">
+              Requires your current password. Does not depend on email delivery.
+            </p>
+          </div>
+        </div>
+
+        <form onSubmit={handleChangePassword} className="space-y-3 max-w-md">
+          <div>
+            <label className="text-[11px] font-bold text-gray-500 block mb-1">Admin Email</label>
+            <input
+              type="email"
+              value={pwEmail}
+              onChange={(e) => setPwEmail(e.target.value)}
+              className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-xl text-xs focus:outline-none focus:border-[#0B6B3A] font-medium"
+            />
+          </div>
+          <div>
+            <label className="text-[11px] font-bold text-gray-500 block mb-1">Current Password</label>
+            <input
+              type="password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-xl text-xs focus:outline-none focus:border-[#0B6B3A] font-medium"
+            />
+          </div>
+          <div>
+            <label className="text-[11px] font-bold text-gray-500 block mb-1">New Password (min 8 characters)</label>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-xl text-xs focus:outline-none focus:border-[#0B6B3A] font-medium"
+            />
+          </div>
+          <div>
+            <label className="text-[11px] font-bold text-gray-500 block mb-1">Confirm New Password</label>
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-xl text-xs focus:outline-none focus:border-[#0B6B3A] font-medium"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={changingPassword || !currentPassword || !newPassword || !confirmPassword}
+            className={`px-5 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all ${
+              currentPassword && newPassword && confirmPassword && !changingPassword
+                ? "bg-[#0B6B3A] hover:bg-[#064E2A] text-white shadow-sm"
+                : "bg-gray-200 text-gray-400 cursor-not-allowed"
+            }`}
+          >
+            {changingPassword ? (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                Updating...
+              </>
+            ) : (
+              <>
+                <Check className="w-3.5 h-3.5" />
+                Update Password
+              </>
+            )}
+          </button>
+
+          {passwordChangeResult && (
+            <div
+              className={`p-3.5 rounded-xl border text-xs flex items-start gap-2 ${
+                passwordChangeResult.success
+                  ? "bg-green-50 border-green-200 text-[#064E2A]"
+                  : "bg-red-50 border-red-200 text-red-900"
+              }`}
+            >
+              {passwordChangeResult.success ? (
+                <CheckCircle2 className="w-4 h-4 text-[#0B6B3A] shrink-0 mt-0.5" />
+              ) : (
+                <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+              )}
+              <span>{passwordChangeResult.message}</span>
+            </div>
+          )}
+        </form>
+      </div>
 
       {/* Airtel SMS Health & Verification Box */}
       <div className="bg-white p-8 rounded-3xl border border-gray-200 shadow-sm space-y-6">
