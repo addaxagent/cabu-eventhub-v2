@@ -189,6 +189,9 @@ function createSmtpTransporter() {
     tls: {
       rejectUnauthorized: true,
     },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
   });
 }
 
